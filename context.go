@@ -2,6 +2,8 @@ package ssh
 
 import (
 	"context"
+	"encoding/hex"
+	gossh "golang.org/x/crypto/ssh"
 	"net"
 	"sync"
 )
@@ -30,7 +32,7 @@ var (
 	ContextKeyClientVersion = &contextKey{"client-version"}
 
 	// ContextKeyServerVersion is a context key for use with Contexts in this package.
-	ContextKetServerVersion = &contextKey{"server-version"}
+	ContextKeyServerVersion = &contextKey{"server-version"}
 
 	// ContextKeyLocalAddr is a context key for use with Contexts in this package.
 	// The associated value will be of type "net.addr"
@@ -85,22 +87,18 @@ type Context interface {
 	SetValue(key, value interface{})
 }
 
-
 type sshContext struct {
 	context.Context
 	*sync.Mutex
 }
 
-
 func (ctx *sshContext) SetValue(key, value interface{}) {
 	ctx.Context = context.WithValue(ctx.Context, key, value)
 }
 
-
 func (ctx *sshContext) User() string {
 	return ctx.Value(ContextKeyUser).(string)
 }
-
 
 func (ctx *sshContext) SessionID() string {
 	return ctx.Value(ContextKeySessionID).(string)
@@ -111,13 +109,12 @@ func (ctx *sshContext) ClientVersion() string {
 }
 
 func (ctx *sshContext) ServerVersion() string {
-	return ctx.Value(ContextKetServerVersion).(string)
+	return ctx.Value(ContextKeyServerVersion).(string)
 }
 
 func (ctx *sshContext) RemoteAddr() net.Addr {
 	return ctx.Value(ContextKeyRemoteAddr).(net.Addr)
 }
-
 
 func (ctx *sshContext) LocalAddr() net.Addr {
 	return ctx.Value(ContextKeyLocalAddr).(net.Addr)
@@ -127,10 +124,25 @@ func (ctx *sshContext) Permissions() *Permissions {
 	return ctx.Value(ContextKeyPermissions).(*Permissions)
 }
 
+func newContext(srv *Server) (*sshContext, context.CancelFunc) {
+	innerCtx, cancel := context.WithCancel(context.Background())
+	ctx := &sshContext{innerCtx, &sync.Mutex{}}
+	ctx.SetValue(ContextKeyServer, srv)
+	perms := &Permissions{&gossh.Permissions{}}
+	ctx.SetValue(ContextKeyPermissions, perms)
+	return ctx, cancel
+}
 
-// ToDo - newContext(srv *Server) (*sshContext, context.CancelFunc)
-
-// ToDo - applyConnMetadata(ctx Context, conn gossh.ConnMetadata)
-
-
-
+// this is separate from newContext because we will get ConnMetadata
+// at different points so it needs to be applied separately
+func applyConnMetadata(ctx Context, conn gossh.ConnMetadata) {
+	if ctx.Value(ContextKeySessionID) != nil {
+		return
+	}
+	ctx.SetValue(ContextKeySessionID, hex.EncodeToString(conn.SessionID()))
+	ctx.SetValue(ContextKeyClientVersion, string(conn.ClientVersion()))
+	ctx.SetValue(ContextKeyServerVersion, string(conn.ServerVersion()))
+	ctx.SetValue(ContextKeyUser, conn.User())
+	ctx.SetValue(ContextKeyLocalAddr, conn.LocalAddr())
+	ctx.SetValue(ContextKeyRemoteAddr, conn.RemoteAddr())
+}

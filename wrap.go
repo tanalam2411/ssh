@@ -7,11 +7,15 @@ type PublicKey interface {
 	gossh.PublicKey
 }
 
-
 // The Permissions type holds fine-grained permissions that are specific to a user
 // or a specific authentication method for a user.
 // Permissions, except for "source-address", must be enforced in the server application layer,
 // after successful authentication.
 type Permissions struct {
-	gossh.Permissions
+	*gossh.Permissions
+}
+
+// A signer can create signatures that verify against a public key.
+type Signer interface {
+	gossh.Signer
 }
